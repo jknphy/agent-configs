@@ -1,0 +1,69 @@
+{
+    "$schema": "https://raw.githubusercontent.com/gotgenes/pi-packages/main/packages/pi-permission-system/schemas/permissions.schema.json",
+    "debugLog": false,
+    "permissionReviewLog": true,
+    "yoloMode": false,
+    "doublePressToConfirm": false,
+    "commandEffects": {
+        "git": {
+            "unlessOption": [
+                "--output"
+            ],
+            "subcommands": {
+                "log": "read",
+                "status": "read",
+                "diff": "read"
+            }
+        }
+    },
+    "permission": {
+        "*": "allow",
+        "path": {
+            "*": "allow",
+            "*.env": "deny",
+            "*.env.*": "deny",
+            "*.env.example": "allow",
+            "~/.ssh/*": "deny",
+            "~/.aws/*": "deny",
+            "*/.git/*": "deny"
+        },
+        "read": "allow",
+        "write": "allow",
+        "edit": "allow",
+        "grep": "allow",
+        "find": "allow",
+        "ls": "allow",
+        "bash": {
+            "*": "allow",
+            "rm -rf /": "deny",
+            "rm -rf /*": "deny",
+            "rm -rf ~*": "deny",
+            "rm -rf $HOME*": "deny",
+            "mkfs*": "deny",
+            "dd *": "deny",
+            "shutdown*": "deny",
+            "reboot*": "deny",
+            "git push --force*": "ask",
+            "git reset --hard*": "ask",
+            "git clean -fd*": "ask"
+        },
+        "mcp": {
+            "*": "allow"
+        },
+        "skill": {
+            "*": "allow"
+        },
+        "external_directory": {
+            "*": "ask"
+        },
+        "external_directory_read": {
+            "/opt/*": "allow",
+            "/home/aiuser/*": "allow",
+            "/tmp/*": "allow"
+        },
+        "external_directory_write": {
+            "*": "ask",
+            "/tmp/*": "allow"
+        }
+    }
+}

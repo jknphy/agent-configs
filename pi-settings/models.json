@@ -1,0 +1,14 @@
+{
+    "providers": {
+        "google-vertex": {
+            "modelOverrides": {
+                "gemini-3.8-flash": {
+                    "contextWindow": 320000
+                },
+                "gemini-3.1-pro-preview": {
+                    "contextWindow": 320000
+                }
+            }
+        }
+    }
+}

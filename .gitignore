@@ -1,0 +1,14 @@
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor temp files
+*.swp
+*.swo
+*~
+*.bak
+
+# Environment and local secret files
+*.env
+*.env.*
+!*.env.example
