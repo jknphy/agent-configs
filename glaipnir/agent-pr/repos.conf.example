@@ -1,10 +1,12 @@
 # Copy to repos.conf (git-ignored, keep it private) and adjust.
 # Repos the sandbox may push to / open PRs/MRs against, via `agent-pr`.
-# <host repo path> <github|gitlab> <host> <upstream slug> <base branch> <token file> [<push slug (fork)>]
+# <host repo path> <github|gitlab> <host> <upstream slug> <base branch> <token file> [<push slug (fork) or ->] [full|push-only]
+# mode: full = the agent can also create/update the PR/MR through gh/glab (token needs PR/MR API rights);
+#       push-only = the agent only pushes, a human opens the PR/MR in the browser (token needs push rights only).
 # token file: mode 600, a token scoped to that one repo (see README). Used for git over HTTPS and gh/glab.
 
 # GitHub, pushing directly to the repo:
-/path/to/clone github github.com owner/repo main /path/to/home/.ssh/agent-pr/repo.token
+/path/to/clone github github.com owner/repo main /path/to/home/.ssh/agent-pr/repo.token - full
 
 # GitLab (self-hosted), pushing to your fork and opening an MR against upstream:
-/path/to/other-clone gitlab gitlab.example.com group/subgroup/repo main /path/to/home/.ssh/agent-pr/other-repo.token your-user/repo
+/path/to/other-clone gitlab gitlab.example.com group/subgroup/repo main /path/to/home/.ssh/agent-pr/other-repo.token your-user/repo push-only

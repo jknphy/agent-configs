@@ -9,12 +9,19 @@
 # The same token is used for git over HTTPS and for gh/glab; your own logins,
 # SSH keys and credential helpers are never used.
 #
-#   agent-pr push [--dry-run]
+#   agent-pr push [--dry-run] [--force-with-lease]
 #   agent-pr create --title T [--body B] [--draft]
 #   agent-pr update [--title T] [--body B]
 #   agent-pr status
 #
 # Always acts on the current branch, which must be agent/<name>.
+#
+# Per-repo mode (8th column of repos.conf):
+#   full       create/update/status go through gh/glab (token needs PR/MR API rights)
+#   push-only  the token is only used for git over HTTPS. `create` pushes and prints the
+#              URL where a human opens the PR/MR in the browser; update/status are refused.
+#              The token then needs only push rights (GitHub: Contents; GitLab:
+#              write_repository), no API access at all.
 # =============================================================================
 set -euo pipefail
 
@@ -36,14 +43,15 @@ done
 [ -n "$ROOT" ] || die "not inside a git repository (with a real .git directory)"
 
 # --- look it up in repos.conf ------------------------------------------------
-# <path> <github|gitlab> <host> <upstream slug> <base> <token file> [<push slug>]
+# <path> <github|gitlab> <host> <upstream slug> <base> <token file> [<push slug>|-] [full|push-only]
 [ -r "$CONF" ] || die "missing $CONF"
-FORGE=""; HOST=""; UPSTREAM=""; BASE=""; TOKEN_F=""; PUSH_REPO=""
-while read -r p forge host up base tokf push _; do
+FORGE=""; HOST=""; UPSTREAM=""; BASE=""; TOKEN_F=""; PUSH_REPO=""; MODE=full
+while read -r p forge host up base tokf push mode _; do
     case "$p" in ''|'#'*) continue ;; esac
     if [ "$p" = "$ROOT" ]; then
         FORGE="$forge"; HOST="$host"; UPSTREAM="$up"; BASE="$base"
-        TOKEN_F="$tokf"; PUSH_REPO="${push:-$up}"
+        TOKEN_F="$tokf"; PUSH_REPO="$up"; [ -z "${push:-}" ] || [ "$push" = "-" ] || PUSH_REPO="$push"
+        MODE="${mode:-full}"
         break
     fi
 done < "$CONF"
@@ -53,6 +61,7 @@ slug_re='^[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)+$'
 host_re='^[A-Za-z0-9.-]+$'
 [[ "$UPSTREAM" =~ $slug_re && "$PUSH_REPO" =~ $slug_re ]] || die "bad repo slug in $CONF"
 [[ "$HOST" =~ $host_re ]] || die "bad host in $CONF"
+case "$MODE" in full|push-only) ;; *) die "mode must be full or push-only in $CONF" ;; esac
 case "$FORGE" in github|gitlab) ;; *) die "forge must be github or gitlab in $CONF" ;; esac
 [ "$FORGE" != github ] || [ "$HOST" = github.com ] || die "github host must be github.com"
 [ -r "$TOKEN_F" ] || die "token file $TOKEN_F not readable"
@@ -96,6 +105,19 @@ forge_cli() {  # runs from / so no local git repo influences the CLI
     fi
 }
 
+# where a human opens the PR/MR in the browser (push-only mode)
+open_url() {
+    if [ "$FORGE" = github ]; then
+        if [ "$PUSH_REPO" = "$UPSTREAM" ]; then
+            echo "https://github.com/${UPSTREAM}/compare/${BASE}...${BRANCH}?expand=1"
+        else
+            echo "https://github.com/${UPSTREAM}/compare/${BASE}...${PUSH_REPO%%/*}:${BRANCH}?expand=1"
+        fi
+    else
+        echo "https://${HOST}/${PUSH_REPO}/-/merge_requests/new?merge_request%5Bsource_branch%5D=${BRANCH//\//%2F}&merge_request%5Btarget_branch%5D=${BASE}"
+    fi
+}
+
 parse_text_opts() {  # sets title, body, draft from "$@"
     title=""; body=""; draft=0
     while [ $# -gt 0 ]; do
@@ -110,15 +132,38 @@ parse_text_opts() {  # sets title, body, draft from "$@"
 
 case "$ACTION" in
 push)
-    dry=()
-    case "${1:-}" in --dry-run) dry=(--dry-run); shift ;; esac
-    [ $# -eq 0 ] || die "push only accepts --dry-run"
-    "${GIT[@]}" push --no-verify --no-recurse-submodules "${dry[@]}" \
+    dry=(); lease=()
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --dry-run) dry=(--dry-run) ;;
+            --force-with-lease) lease=(1) ;;
+            *) die "push only accepts --dry-run and --force-with-lease" ;;
+        esac
+        shift
+    done
+    force=()
+    if [ ${#lease[@]} -gt 0 ]; then
+        # lease on the tip the remote has right now; only this agent/* branch can be rewritten
+        tip="$("${GIT[@]}" ls-remote "$PUSH_URL" "refs/heads/${BRANCH}" | cut -f1)"
+        [ -n "$tip" ] || die "branch ${BRANCH} is not on the remote yet; use a plain push"
+        force=("--force-with-lease=refs/heads/${BRANCH}:${tip}")
+    fi
+    "${GIT[@]}" push --no-verify --no-recurse-submodules "${dry[@]}" "${force[@]}" \
         "$PUSH_URL" "refs/heads/${BRANCH}:refs/heads/${BRANCH}"
+    [ "$MODE" != push-only ] || [ ${#dry[@]} -gt 0 ] || echo "agent-pr: open or view the PR/MR here: $(open_url)"
     ;;
 create)
     parse_text_opts "$@"
     [ -n "$title" ] || die "--title is required"
+    if [ "$MODE" = push-only ]; then
+        "${GIT[@]}" push --no-verify --no-recurse-submodules \
+            "$PUSH_URL" "refs/heads/${BRANCH}:refs/heads/${BRANCH}"
+        echo "agent-pr: push-only repo, no PR/MR was created. Open it in the browser (check the target repo/branch):"
+        echo "  $(open_url)"
+        echo "  suggested title: $title"
+        [ -z "$body" ] || echo "  suggested description: $body"
+        exit 0
+    fi
     if [ "$FORGE" = github ]; then
         d=(); [ "$draft" -eq 0 ] || d=(--draft)
         forge_cli pr create --repo "$UPSTREAM" --base "$BASE" --head "$HEAD_REF" \
@@ -131,6 +176,7 @@ create)
     fi
     ;;
 update)
+    [ "$MODE" != push-only ] || die "push-only repo: edit the title/description in the browser; push new commits with 'agent-pr push'"
     parse_text_opts "$@"
     [ "$draft" -eq 0 ] || die "--draft is only valid for create"
     a=()
@@ -144,6 +190,7 @@ update)
     ;;
 status)
     [ $# -eq 0 ] || die "status takes no arguments"
+    [ "$MODE" != push-only ] || die "push-only repo: check the PR/MR in the browser: $(open_url)"
     if [ "$FORGE" = github ]; then
         forge_cli pr view "$HEAD_REF" --repo "$UPSTREAM"
     else
