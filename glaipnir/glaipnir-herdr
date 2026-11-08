@@ -1,0 +1,14 @@
+#!/bin/sh
+# Run glaipnir, then hand the herdr pane back. The sandbox can be killed without
+# pi getting to release it, which leaves herdr showing a stale "pi" agent.
+# Usage: glaipnir-herdr run pi [options]   (same arguments as glaipnir)
+glaipnir "$@"
+rc=$?
+if [ -n "${HERDR_PANE_ID:-}" ] && command -v herdr >/dev/null 2>&1; then
+    # herdr ignores a release whose --seq is not above the last report; the
+    # extension seeds its seq from the clock in microseconds, so do the same.
+    herdr pane release-agent "$HERDR_PANE_ID" \
+        --source herdr:pi-sandbox --agent pi \
+        --seq "$(( $(date +%s) * 1000000 + 999999 ))" >/dev/null 2>&1 || true
+fi
+exit "$rc"

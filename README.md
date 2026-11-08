@@ -25,9 +25,12 @@ agent-configs/
 ├── README.md
 ├── glaipnir/
 │   ├── glaipnir.conf            # Glaipnir sandbox settings (agent selection, host mounts)
+│   ├── glaipnir-herdr           # Wrapper: runs glaipnir, then releases the herdr pane
 │   └── hooks/
 │       └── 10-pi-settings.sh    # Startup hook provisioning configs inside the sandbox
 └── pi-settings/
+    ├── extensions/
+    │   └── herdr-sandbox-state.ts  # Reports pi state to herdr through the glaipnir proxy
     ├── AGENTS.md                # Sandbox rules for the agent: how to commit and use agent-pr
     ├── settings.json            # Core Pi agent settings, enabled models, and packages/skills
     ├── models.json              # Provider & model overrides (e.g., Google Vertex context windows)
@@ -48,7 +51,6 @@ agent-configs/
   - `@gotgenes/pi-permission-system`: Fine-grained tool and command execution guardrails.
   - `@dietrichgebert/ponytail`: Pragmatic, minimalist senior developer mode skill.
   - `openQA-skill`: openQA test development, triage, and debugging skill.
-  - `@raidou/pi-notify`: Desktop notifications for agent events.
   - `pi-open-tui` & `@inobit/pi-themes`: Enhanced TUI experience (Rose Pine theme).
   - `@monotykamary/pi-retry`: Auto-retry policies for transient model errors.
   - `i-have-adhd`: Agent workflow enhancements.
@@ -120,6 +122,14 @@ install -m 600 /dev/stdin ~/.ssh/agent-pr/<name>.token
 Paste the token, press Enter, then press **Ctrl-D** (twice if the cursor is not on an empty line) to finish. `install` reads until end-of-input, so nothing happens on Enter alone. The token is visible on screen while you paste it. The wrapper strips trailing whitespace, so a newline in the file is harmless.
 
 To renew, create a new token with the same settings and overwrite the file with the command above; nothing else changes. The wrapper requires the file to be mode 600 and owned by you. To revoke, delete the token on the forge.
+
+### 6. herdr agent status from the sandbox (`glaipnir/glaipnir-herdr`, `pi-settings/extensions/`)
+herdr's own pi extension talks to a unix socket and reads `HERDR_*` variables. Neither exists inside the microVM, so the sandboxed pi never shows up in herdr. Instead, `pi-settings/extensions/herdr-sandbox-state.ts` (copied in by the startup hook) runs `herdr` through the Glaipnir proxy, which executes it on the host with the environment of the pane Glaipnir was started from. It is inactive outside the sandbox.
+
+- `glaipnir.conf` allowlists exactly `herdr pane current` (finds the pane), `herdr pane report-agent` (working/idle) and `herdr pane release-agent` (on `/quit`). Prefix matching applies, so those subcommands accept any arguments, including another pane id.
+- Start the sandbox with `glaipnir/glaipnir-herdr run pi ...` (same arguments as `glaipnir`; link it onto your `PATH` if you like). After glaipnir exits it releases the pane, which covers a sandbox that is killed before pi can release it. Without it the pane keeps showing `pi`.
+- herdr quirks: `release-agent` only parses with the pane id before the options, and both `report-agent` and `release-agent` silently ignore a call whose `--seq` is not above the last one. Both the extension and the wrapper seed `--seq` from the clock in microseconds.
+- Debugging: run `export HERDR_SANDBOX_DEBUG=1` in the sandbox before starting pi. Every proxied call and its result is then appended to `~/.pi/agent/herdr-sandbox.log` in the sandbox, which is `~/.cache/glaipnir/agents-mount/.pi/agent/herdr-sandbox.log` on the host.
 
 ---
 

@@ -9,7 +9,6 @@
     "claude-opus-5-5"
   ],
   "packages": [
-    "npm:@raidou/pi-notify",
     "npm:pi-open-tui",
     "npm:@inobit/pi-themes",
     "npm:@monotykamary/pi-retry",
