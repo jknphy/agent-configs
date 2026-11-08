@@ -28,6 +28,7 @@ agent-configs/
 │   └── hooks/
 │       └── 10-pi-settings.sh    # Startup hook provisioning configs inside the sandbox
 └── pi-settings/
+    ├── AGENTS.md                # Sandbox rules for the agent: how to commit and use agent-pr
     ├── settings.json            # Core Pi agent settings, enabled models, and packages/skills
     ├── models.json              # Provider & model overrides (e.g., Google Vertex context windows)
     ├── pi-permission-system/

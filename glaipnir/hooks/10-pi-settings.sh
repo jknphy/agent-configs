@@ -7,6 +7,7 @@ set -euo pipefail
 mkdir -p "$HOME/.pi/agent"
 cp /home/aiuser/pi-config/settings.json "$HOME/.pi/agent/settings.json"
 cp /home/aiuser/pi-config/models.json "$HOME/.pi/agent/models.json"
+cp /home/aiuser/pi-config/AGENTS.md "$HOME/.pi/agent/AGENTS.md"
 
 mkdir -p "$HOME/.pi/agent/extensions/pi-permission-system"
 cp /home/aiuser/pi-config/pi-permission-system/config.json "$HOME/.pi/agent/extensions/pi-permission-system/config.json"
