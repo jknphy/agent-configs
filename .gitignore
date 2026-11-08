@@ -12,3 +12,6 @@ Thumbs.db
 *.env
 *.env.*
 !*.env.example
+
+# Private agent-pr target list (internal hosts/projects); see glaipnir/agent-pr/repos.conf.example
+glaipnir/agent-pr/repos.conf

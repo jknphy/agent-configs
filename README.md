@@ -71,6 +71,46 @@ Enforces strict security boundaries inside the sandbox:
   ```
 - `hooks/10-pi-settings.sh`: Ensures sandbox user environment has identical configurations across ephemeral sandbox sessions.
 
+### 5. Safe push and PR/MR from the sandbox (`glaipnir/agent-pr/`)
+Glaipnir `CMDS` run on the **host** with prefix matching, so allowlisting `git push` would let the agent push anywhere your credentials reach (and host-side git would run hooks/config planted in the workspace). Instead only `agent-pr` is allowlisted (`CMDS=("agent-pr")`); plain `git add/commit/log/...` works inside the sandbox.
+
+```text
+agent-pr push [--dry-run]
+agent-pr create --title T [--body B] [--draft]
+agent-pr update [--title T] [--body B]
+agent-pr status
+```
+
+- Acts on the current branch only, which must be `agent/<name>` (never the base branch, never forced, hooks disabled).
+- Repo, base branch and token come from `glaipnir/agent-pr/repos.conf` (host side), not from the workspace's `.git/config`. It refuses to run if the repo-local config sets `url.*`, `http.*` or `credential.*`.
+- One **repo-scoped token** per repo does everything: `git push` over HTTPS, and PR/MR creation through `gh` (GitHub) or `glab` (GitLab). Your own CLI logins, SSH keys and credential helpers are never used. A leaked or misused token can only touch that one repo.
+- Branch protection on the base branch is still recommended.
+
+#### Setup on a new machine
+1. Install `gh` and/or `glab`, and link the wrapper onto the host `PATH`: `ln -s "$PWD/glaipnir/agent-pr/agent-pr" ~/.local/bin/agent-pr`
+2. Create a token for each repo (see below) and store it as `~/.ssh/agent-pr/<name>.token`.
+3. Copy `glaipnir/agent-pr/repos.conf.example` to `glaipnir/agent-pr/repos.conf` (git-ignored, because it names your internal hosts and projects) and add a line per repo:
+   `<host repo path> <github|gitlab> <host> <upstream owner/repo> <base branch> <token file> [<fork owner/repo>]`
+   For a fork, the token belongs to the **fork** (the repo the agent pushes to) and the optional last column holds its path; the PR/MR targets upstream.
+4. Check it without pushing anything: on a throwaway `agent/test` branch run `agent-pr push --dry-run`.
+
+#### Creating or renewing a token
+Name tokens `glaipnir-agent-pr-<repo>`, give them a short expiry (e.g. 90 days) and put the renewal date in the description.
+
+- **GitHub** (Settings, Developer settings, Fine-grained tokens): repository access limited to the one repo. Under repository permissions set **both** of these to Read and write (Metadata: read is added automatically):
+  - **Contents**: needed for `git push`.
+  - **Pull requests**: needed for `create`, `update` and `status`. If it is missing, pushing works but opening a PR fails with `Resource not accessible by personal access token (createPullRequest)`. Permissions of an existing token can be edited in place, so the token file stays valid.
+- **GitLab** (project, Settings, Access tokens): role Developer, scope `api`. Create it on the project the agent pushes to (the fork, if you use one). Developer cannot push to protected branches, which is the desired guard.
+
+Store the token without echoing it or leaving it in shell history (zsh):
+```zsh
+mkdir -p ~/.ssh/agent-pr && chmod 700 ~/.ssh/agent-pr
+read -rs "t?Token: " && print -rn -- "$t" | install -m 600 /dev/stdin ~/.ssh/agent-pr/<name>.token; unset t
+```
+In bash use `read -rsp "Token: " t && printf %s "$t" | install -m 600 /dev/stdin ~/.ssh/agent-pr/<name>.token; unset t`. (`install ... /dev/stdin` on its own waits for end-of-input, so finish with Ctrl-D.)
+
+To renew, create a new token with the same settings and overwrite the file with the command above; nothing else changes. The wrapper requires the file to be mode 600 and owned by you. To revoke, delete the token on the forge.
+
 ---
 
 ## Usage

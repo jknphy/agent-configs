@@ -1,0 +1,156 @@
+#!/bin/bash
+# =============================================================================
+# agent-pr - host-side "push my branch and manage its PR/MR" helper for Glaipnir
+#
+# Allowlisted in glaipnir.conf via CMDS=("agent-pr"). It runs on the HOST, so
+# everything the sandbox can influence (.git/config, hooks, remotes, args) is
+# treated as untrusted. The target repo, base branch and the repo-scoped token
+# come from repos.conf (host side, version controlled, outside the workspace).
+# The same token is used for git over HTTPS and for gh/glab; your own logins,
+# SSH keys and credential helpers are never used.
+#
+#   agent-pr push [--dry-run]
+#   agent-pr create --title T [--body B] [--draft]
+#   agent-pr update [--title T] [--body B]
+#   agent-pr status
+#
+# Always acts on the current branch, which must be agent/<name>.
+# =============================================================================
+set -euo pipefail
+
+SELF_D="$(dirname "$(readlink -f "$0")")"
+CONF="${AGENT_PR_CONF:-${SELF_D}/repos.conf}"
+
+die() { echo "agent-pr: $*" >&2; exit 1; }
+
+[ $# -ge 1 ] || die "usage: agent-pr push|create|update|status [options]"
+ACTION="$1"; shift
+
+# --- locate the repo root without invoking git (no config/hooks involved) ----
+dir="$(realpath "$PWD")"
+ROOT=""
+while [ "$dir" != "/" ]; do
+    if [ -d "$dir/.git" ] && [ ! -L "$dir/.git" ]; then ROOT="$dir"; break; fi
+    dir="$(dirname "$dir")"
+done
+[ -n "$ROOT" ] || die "not inside a git repository (with a real .git directory)"
+
+# --- look it up in repos.conf ------------------------------------------------
+# <path> <github|gitlab> <host> <upstream slug> <base> <token file> [<push slug>]
+[ -r "$CONF" ] || die "missing $CONF"
+FORGE=""; HOST=""; UPSTREAM=""; BASE=""; TOKEN_F=""; PUSH_REPO=""
+while read -r p forge host up base tokf push _; do
+    case "$p" in ''|'#'*) continue ;; esac
+    if [ "$p" = "$ROOT" ]; then
+        FORGE="$forge"; HOST="$host"; UPSTREAM="$up"; BASE="$base"
+        TOKEN_F="$tokf"; PUSH_REPO="${push:-$up}"
+        break
+    fi
+done < "$CONF"
+[ -n "$UPSTREAM" ] || die "$ROOT is not registered in $CONF"
+
+slug_re='^[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)+$'
+host_re='^[A-Za-z0-9.-]+$'
+[[ "$UPSTREAM" =~ $slug_re && "$PUSH_REPO" =~ $slug_re ]] || die "bad repo slug in $CONF"
+[[ "$HOST" =~ $host_re ]] || die "bad host in $CONF"
+case "$FORGE" in github|gitlab) ;; *) die "forge must be github or gitlab in $CONF" ;; esac
+[ "$FORGE" != github ] || [ "$HOST" = github.com ] || die "github host must be github.com"
+[ -r "$TOKEN_F" ] || die "token file $TOKEN_F not readable"
+[ "$(stat -c '%a %U' "$TOKEN_F")" = "600 $(id -un)" ] || die "token file $TOKEN_F must be mode 600 and owned by you"
+TOKEN="$(tr -d '[:space:]' < "$TOKEN_F")"
+[ -n "$TOKEN" ] || die "token file $TOKEN_F is empty"
+PUSH_URL="https://${HOST}/${PUSH_REPO}.git"
+
+# --- sanitized git: ignore repo-controlled hooks/fsmonitor/credentials -------
+unset GIT_DIR GIT_WORK_TREE GIT_SSH GIT_SSH_COMMAND GIT_EXEC_PATH GIT_ASKPASS
+[ "$FORGE" = github ] && AUTH_USER=x-access-token || AUTH_USER=oauth2
+export GIT_TERMINAL_PROMPT=0
+export GIT_CONFIG_COUNT=1
+export GIT_CONFIG_KEY_0="http.https://${HOST}/.extraHeader"
+export GIT_CONFIG_VALUE_0="Authorization: Basic $(printf '%s:%s' "$AUTH_USER" "$TOKEN" | base64 -w0)"
+GIT=(git -C "$ROOT" -c core.hooksPath=/dev/null -c core.fsmonitor=false
+     -c protocol.allow=never -c protocol.https.allow=always -c http.followRedirects=false
+     -c credential.helper=)
+
+# repo-local URL rewrites / http / credential settings could redirect or leak the token
+if [ -n "$("${GIT[@]}" config --local --get-regexp '^(url|http|credential)\.' 2>/dev/null || true)" ]; then
+    die "repo-local url.*, http.* or credential.* settings are not allowed"
+fi
+
+BRANCH="$("${GIT[@]}" symbolic-ref --quiet --short HEAD)" || die "detached HEAD"
+branch_re='^agent/[A-Za-z0-9._/-]+$'
+[[ "$BRANCH" =~ $branch_re && "$BRANCH" != *..* && "$BRANCH" != */ && "$BRANCH" != *.lock ]] \
+    || die "branch '$BRANCH' must match agent/<name>"
+[ "$BRANCH" != "$BASE" ] || die "refusing to use the base branch"
+
+HEAD_REF="$BRANCH"
+[ "$PUSH_REPO" = "$UPSTREAM" ] || HEAD_REF="${PUSH_REPO%%/*}:${BRANCH}"
+
+# --- forge CLIs: scoped token only, empty config dir (no keyring/login) ------
+CFG_D="$(mktemp -d)"; trap 'rm -rf "$CFG_D"' EXIT
+forge_cli() {  # runs from / so no local git repo influences the CLI
+    if [ "$FORGE" = github ]; then
+        (cd / && GH_TOKEN="$TOKEN" GH_CONFIG_DIR="$CFG_D" GH_PROMPT_DISABLED=1 GH_NO_UPDATE_NOTIFIER=1 gh "$@")
+    else
+        (cd / && GITLAB_TOKEN="$TOKEN" GITLAB_HOST="$HOST" GLAB_CONFIG_DIR="$CFG_D" GLAB_NO_PROMPT=1 glab "$@")
+    fi
+}
+
+parse_text_opts() {  # sets title, body, draft from "$@"
+    title=""; body=""; draft=0
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --title) [ $# -ge 2 ] || die "--title needs a value"; title="$2"; shift 2 ;;
+            --body)  [ $# -ge 2 ] || die "--body needs a value";  body="$2";  shift 2 ;;
+            --draft) draft=1; shift ;;
+            *) die "unknown option '$1'" ;;
+        esac
+    done
+}
+
+case "$ACTION" in
+push)
+    dry=()
+    case "${1:-}" in --dry-run) dry=(--dry-run); shift ;; esac
+    [ $# -eq 0 ] || die "push only accepts --dry-run"
+    "${GIT[@]}" push --no-verify --no-recurse-submodules "${dry[@]}" \
+        "$PUSH_URL" "refs/heads/${BRANCH}:refs/heads/${BRANCH}"
+    ;;
+create)
+    parse_text_opts "$@"
+    [ -n "$title" ] || die "--title is required"
+    if [ "$FORGE" = github ]; then
+        d=(); [ "$draft" -eq 0 ] || d=(--draft)
+        forge_cli pr create --repo "$UPSTREAM" --base "$BASE" --head "$HEAD_REF" \
+            --title "$title" --body "$body" "${d[@]}"
+    else
+        d=(); [ "$draft" -eq 0 ] || d=(--draft)
+        h=(); [ "$PUSH_REPO" = "$UPSTREAM" ] || h=(--head "$PUSH_REPO")
+        forge_cli mr create --repo "$UPSTREAM" "${h[@]}" --source-branch "$BRANCH" --target-branch "$BASE" \
+            --title "$title" --description "$body" --push=false --yes --no-editor "${d[@]}"
+    fi
+    ;;
+update)
+    parse_text_opts "$@"
+    [ "$draft" -eq 0 ] || die "--draft is only valid for create"
+    a=()
+    if [ "$FORGE" = github ]; then
+        [ -z "$title" ] || a+=(--title "$title"); [ -z "$body" ] || a+=(--body "$body")
+        forge_cli pr edit "$HEAD_REF" --repo "$UPSTREAM" "${a[@]}"
+    else
+        [ -z "$title" ] || a+=(--title "$title"); [ -z "$body" ] || a+=(--description "$body")
+        forge_cli mr update "$BRANCH" --repo "$UPSTREAM" "${a[@]}"
+    fi
+    ;;
+status)
+    [ $# -eq 0 ] || die "status takes no arguments"
+    if [ "$FORGE" = github ]; then
+        forge_cli pr view "$HEAD_REF" --repo "$UPSTREAM"
+    else
+        forge_cli mr view "$BRANCH" --repo "$UPSTREAM"
+    fi
+    ;;
+*)
+    die "unknown action '$ACTION'"
+    ;;
+esac
