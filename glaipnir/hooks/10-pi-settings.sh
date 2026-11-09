@@ -9,6 +9,12 @@ cp /home/aiuser/pi-config/settings.json "$HOME/.pi/agent/settings.json"
 cp /home/aiuser/pi-config/models.json "$HOME/.pi/agent/models.json"
 cp /home/aiuser/pi-config/AGENTS.md "$HOME/.pi/agent/AGENTS.md"
 
+# Vertex region for google-vertex and pi-anthropic-vertex. glaipnir forwards
+# GOOGLE_CLOUD_PROJECT but not the location. Credentials (ADC) persist in the
+# glaipnir cache mount after a one-time `gcloud auth application-default login`.
+grep -q GOOGLE_CLOUD_LOCATION "$HOME/.bashrc" 2>/dev/null ||
+    echo 'export GOOGLE_CLOUD_LOCATION=global' >> "$HOME/.bashrc"
+
 mkdir -p "$HOME/.pi/agent/extensions/pi-permission-system"
 cp /home/aiuser/pi-config/pi-permission-system/config.json "$HOME/.pi/agent/extensions/pi-permission-system/config.json"
 

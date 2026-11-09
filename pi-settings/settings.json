@@ -9,6 +9,7 @@
     "claude-opus-5-5"
   ],
   "packages": [
+    "npm:@twogiants/pi-anthropic-vertex",
     "npm:pi-open-tui",
     "npm:@inobit/pi-themes",
     "npm:@monotykamary/pi-retry",
