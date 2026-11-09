@@ -16,5 +16,4 @@ mkdir -p "$HOME/.config/ponytail"
 cp /home/aiuser/pi-config/ponytail/config.json "$HOME/.config/ponytail/config.json"
 
 # herdr state reporting through the glaipnir proxy (inactive outside herdr)
-mkdir -p "$HOME/.pi/agent/extensions"
 cp /home/aiuser/pi-config/extensions/herdr-sandbox-state.ts "$HOME/.pi/agent/extensions/herdr-sandbox-state.ts"
