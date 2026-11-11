@@ -1,7 +1,8 @@
 {
-  "defaultProvider": "google-vertex",
-  "defaultModel": "gemini-3.8-flash",
+  "defaultProvider": "gemini-acp",
+  "defaultModel": "gemini-auto",
   "enabledModels": [
+    "gemini-acp/gemini-auto",
     "gemini-3.1-pro-preview",
     "gemini-3.8-flash",
     "claude-sonnet-5-5",
@@ -9,19 +10,12 @@
     "claude-opus-5-5"
   ],
   "packages": [
+    "git:github.com/openSUSE-Python/pi-gemini-acp",
     "npm:@twogiants/pi-anthropic-vertex",
     "npm:pi-open-tui",
     "npm:@inobit/pi-themes",
     "npm:@monotykamary/pi-retry",
-    "npm:@gotgenes/pi-permission-system",
-    "git:github.com/ayghri/i-have-adhd",
-    {
-      "source": "npm:@dietrichgebert/ponytail",
-      "skills": [
-        "skills/ponytail"
-      ]
-    },
-    "git:github.com/os-autoinst/openQA-skill"
+    "npm:@gotgenes/pi-permission-system"
   ],
   "compaction": {
     "enabled": true,
