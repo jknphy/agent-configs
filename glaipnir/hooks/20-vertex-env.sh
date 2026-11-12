@@ -15,6 +15,11 @@ cp /home/aiuser/pi-config/extensions/vertex-env.ts "$HOME/.pi/agent/extensions/v
 grep -q '.local/bin' "$HOME/.bashrc" 2>/dev/null ||
     echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$HOME/.bashrc"
 
+# glaipnir copies the host's GOOGLE_CLOUD_PROJECT into the container env, so
+# shells would see it. pi sets what it needs itself (vertex-env.ts), so drop both.
+grep -q 'unset GOOGLE_CLOUD_PROJECT' "$HOME/.bashrc" 2>/dev/null ||
+    echo 'unset GOOGLE_CLOUD_PROJECT GOOGLE_CLOUD_LOCATION' >> "$HOME/.bashrc"
+
 # Resolved without ~/.local/bin, so a re-run never wraps the wrapper.
 mkdir -p "$HOME/.local/bin"
 real_path="$(printf '%s' "$PATH" | tr ':' '\n' | grep -vxF "$HOME/.local/bin" | paste -sd:)"

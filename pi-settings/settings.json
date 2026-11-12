@@ -1,16 +1,22 @@
 {
-  "defaultProvider": "gemini-acp",
-  "defaultModel": "gemini-auto",
+  "defaultProvider": "amazon-bedrock",
+  "defaultModel": "global.anthropic.claude-sonnet-5-5",
   "enabledModels": [
     "gemini-acp/gemini-auto",
     "gemini-3.1-pro-preview",
     "gemini-3.8-flash",
     "claude-sonnet-5-5",
     "claude-haiku-5-5",
-    "claude-opus-5-5"
+    "claude-opus-5-5",
+    "amazon-bedrock/global.anthropic.claude-sonnet-5-5",
+    "amazon-bedrock/global.anthropic.claude-haiku-5-5",
+    "amazon-bedrock/global.anthropic.claude-opus-5-5"
   ],
   "packages": [
-    "git:github.com/openSUSE-Python/pi-gemini-acp",
+    {
+      "source": "git:github.com/openSUSE-Python/pi-gemini-acp",
+      "skills": []
+    },
     "npm:@twogiants/pi-anthropic-vertex",
     "npm:pi-open-tui",
     "npm:@inobit/pi-themes",

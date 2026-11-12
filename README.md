@@ -26,14 +26,20 @@ agent-configs/
 ├── glaipnir/
 │   ├── glaipnir.conf            # Glaipnir sandbox settings (agent selection, host mounts)
 │   ├── glaipnir-herdr           # Wrapper: runs glaipnir, then releases the herdr pane
+│   ├── bedrock-creds/
+│   │   └── bedrock-creds        # Host-side helper: temporary keys of the `bedrock` AWS profile only
 │   └── hooks/
-│       └── 10-pi-settings.sh    # Startup hook provisioning configs inside the sandbox
+│       ├── 10-pi-settings.sh    # Startup hook provisioning configs inside the sandbox
+│       ├── 20-vertex-env.sh     # Vertex env handling and gemini wrapper
+│       └── 30-bedrock-env.sh    # Sandbox AWS profile that gets its keys from bedrock-creds
 └── pi-settings/
     ├── extensions/
+    │   ├── bedrock-env.ts       # Selects the bedrock AWS profile and region in pi
+    │   ├── vertex-env.ts        # Sets the Vertex project/region in pi
     │   └── herdr-sandbox-state.ts  # Reports pi state to herdr through the glaipnir proxy
     ├── AGENTS.md                # Sandbox rules for the agent: how to commit and use agent-pr
     ├── settings.json            # Core Pi agent settings, enabled models, and packages/skills
-    ├── models.json              # Provider & model overrides (e.g., Google Vertex context windows)
+    ├── models.json              # Provider & model overrides (Vertex context windows, Bedrock models missing from the catalog)
     ├── pi-permission-system/
     │   └── config.json          # Granular security policies & command guardrails
     └── ponytail/
@@ -45,7 +51,7 @@ agent-configs/
 ## Configurations & Extensions
 
 ### 1. Pi Agent Settings (`pi-settings/settings.json`)
-- **Default Provider & Model**: Google Vertex (`gemini-3.8-flash`) with support for Gemini and Claude models.
+- **Default Provider & Model**: Amazon Bedrock (`global.anthropic.claude-sonnet-5-5`), with Gemini, Vertex Claude and Bedrock Sonnet/Haiku/Opus 5.5 enabled.
 - **Compaction**: Automatic context compaction enabled (`reserveTokens: 64000`, `keepRecentTokens: 40000`).
 - **Installed Packages & Skills**:
   - `@gotgenes/pi-permission-system`: Fine-grained tool and command execution guardrails.
@@ -57,6 +63,7 @@ agent-configs/
 
 ### 2. Model Overrides (`pi-settings/models.json`)
 - Expands context window limits for Google Vertex models (`gemini-3.8-flash` and `gemini-3.1-pro-preview` configured for 320,000 tokens).
+- Adds `global.anthropic.claude-sonnet-5-5` (1,000,000 tokens) and `global.anthropic.claude-haiku-5-5` (200,000 tokens) to `amazon-bedrock`, because pi's bundled catalog does not list them yet. The context windows are estimates taken from Sonnet 5 and Haiku 4.5; `modelOverrides` ignores unknown IDs, so these need full `models` entries. Remove them once the catalog includes the models. Opus 5.5 is already in the catalog.
 
 ### 3. Permission System Guardrails (`pi-settings/pi-permission-system/config.json`)
 Enforces strict security boundaries inside the sandbox:
@@ -130,6 +137,17 @@ herdr's own pi extension talks to a unix socket and reads `HERDR_*` variables. N
 - Start the sandbox with `glaipnir/glaipnir-herdr run pi ...` (same arguments as `glaipnir`; link it onto your `PATH` if you like). After glaipnir exits it releases the pane, which covers a sandbox that is killed before pi can release it. Without it the pane keeps showing `pi`.
 - herdr quirks: `release-agent` only parses with the pane id before the options, and both `report-agent` and `release-agent` silently ignore a call whose `--seq` is not above the last one. Both the extension and the wrapper seed `--seq` from the clock in microseconds.
 - Debugging: run `export HERDR_SANDBOX_DEBUG=1` in the sandbox before starting pi. Every proxied call and its result is then appended to `~/.pi/agent/herdr-sandbox.log` in the sandbox, which is `~/.cache/glaipnir/agents-mount/.pi/agent/herdr-sandbox.log` on the host.
+
+### 7. Amazon Bedrock from the sandbox (`glaipnir/bedrock-creds/`, `glaipnir/hooks/30-bedrock-env.sh`)
+The host `bedrock` profile assumes a role from the SSO `default` profile (PowerUser). Mounting `~/.aws` would hand the sandbox that SSO session, so it is not mounted. Instead the sandbox asks the host for temporary keys through the Glaipnir proxy:
+
+- `glaipnir/bedrock-creds/bedrock-creds` runs on the host and prints the temporary keys of the `bedrock` profile only (`aws configure export-credentials`). It ignores its arguments, because `CMDS` uses prefix matching and the sandbox must not be able to ask for another profile.
+- `30-bedrock-env.sh` writes a sandbox `~/.aws/config` with `[profile bedrock]` and `credential_process = /usr/local/bin/bedrock-creds`. The AWS SDK calls it again when the keys expire.
+- `extensions/bedrock-env.ts` sets `AWS_PROFILE=bedrock` and `AWS_REGION=eu-central-1` in the pi process.
+- One-time setup on the host: `ln -s "$PWD/glaipnir/bedrock-creds/bedrock-creds" ~/.local/bin/bedrock-creds`. Keep the host logged in with `aws sso login`.
+
+### 8. Host `GOOGLE_CLOUD_PROJECT` in the sandbox
+Glaipnir copies the host's `GOOGLE_CLOUD_PROJECT` into the container, and only when it creates the container. `20-vertex-env.sh` adds `unset GOOGLE_CLOUD_PROJECT GOOGLE_CLOUD_LOCATION` to the sandbox `~/.bashrc`, so shells stay clean. pi still sets what it needs through `vertex-env.ts`, so `env` run through pi's bash tool still shows them.
 
 ---
 

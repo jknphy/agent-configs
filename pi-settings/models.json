@@ -1,5 +1,15 @@
 {
     "providers": {
+        "amazon-bedrock": {
+            "modelOverrides": {
+                "global.anthropic.claude-sonnet-5-5": {
+                    "contextWindow": 1000000
+                },
+                "global.anthropic.claude-haiku-5-5": {
+                    "contextWindow": 200000
+                }
+            }
+        },
         "google-vertex": {
             "modelOverrides": {
                 "gemini-3.8-flash": {

@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# bedrock-creds - host-side credential helper for the Glaipnir sandbox.
+# Allowlisted in glaipnir.conf via CMDS=("bedrock-creds"). It runs on the HOST
+# and prints temporary credentials of the `bedrock` profile only, in the
+# credential_process JSON format. Arguments are ignored on purpose (CMDS uses
+# prefix matching), so the sandbox cannot ask for another profile such as the
+# SSO `default` one, and ~/.aws never enters the sandbox.
+# Needs a valid `aws sso login` on the host.
+exec aws configure export-credentials --profile bedrock --format process
